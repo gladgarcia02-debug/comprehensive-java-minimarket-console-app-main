@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Built-By: DADDY_GLAD
+Build-Jdk: 25.0.4.1
+Created-By: Maven Integration for Eclipse
+
