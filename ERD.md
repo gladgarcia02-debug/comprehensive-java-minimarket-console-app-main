@@ -9,24 +9,25 @@ erDiagram
     PRODUCT ||--o{ CART_ITEM : included_in
     TRANSACTION ||--o{ CART_ITEM : contains
     TRANSACTION }o--|| PAYMENT_METHOD : uses
-    ADMIN ||--o| CUSTOMER : manages
+    ADMIN ||--o{ CUSTOMER : manages
 
     CUSTOMER {
         string username PK
-        string password
+        string password_hash
         decimal balance
     }
 
     PRODUCT {
-        int product_id PK
+        bigint product_id PK
         string name
         decimal price
     }
 
     CART_ITEM {
-        int cart_item_id PK
+        bigint cart_item_id PK
         string username FK
         int product_id FK
+        bigint transaction_id FK "nullable until checkout"
         int quantity
         decimal line_total
     }
@@ -34,7 +35,7 @@ erDiagram
     TRANSACTION {
         int transaction_id PK
         string username FK
-        string payment_method
+        string payment_method FK
         decimal total_amount
         datetime checkout_time
     }
@@ -46,7 +47,7 @@ erDiagram
 
     ADMIN {
         string username PK
-        string password
+        string password_hash
     }
 ```
 
@@ -55,20 +56,20 @@ erDiagram
 ### 1. Customer
 The `Customer` entity represents a shopper. It has the following attributes:
 - `username`: unique login name
-- `password`: login credential
+- `password_hash`: salted PBKDF2 hash of the login credential
 - `balance`: available wallet value for purchases
 
-In the app, customers are created and managed by the `Login` class, which stores them in a map keyed by username. This makes each customer account unique and allows the app to look up the current person who is logged in.
+Customer accounts are stored in PostgreSQL and loaded by the `Login` class when a shopper signs in.
 
 ### 2. Product
 The `Product` entity represents an item sold in the store. Each product has:
 - `name`
 - `price`
 
-The store catalog is built in `Main.java` and stored in a list inside the `Store` class. The product list is effectively the inventory or catalog of goods available for purchase.
+The sample catalog is inserted into PostgreSQL the first time the product table is empty. Products are then read from the `products` table.
 
 ### 3. Cart item
-The project does not have a separate database table for a cart, but the in-memory structure behaves like one. The `Store` class stores a map of `Customer` to a map of `Product` to `quantity`.
+Open carts and completed purchase lines are stored in the `cart_items` table. A cart line has a null `transaction_id` while it is still in an open cart.
 
 This logically creates a bridge entity, `CartItem`, with the following aspects:
 - customer reference
@@ -87,7 +88,7 @@ Conceptually, a transaction includes:
 - total amount charged
 - checkout timestamp
 
-The app prints a demo receipt and then clears the cart.
+The app prints a demo receipt and attaches the cart lines to the new transaction. Those lines remain in the database as purchase history and no longer appear in the open cart.
 
 ### 5. Payment method
 The payment type is modeled by the `PaymentMethod` enum:
@@ -98,9 +99,7 @@ The payment type is modeled by the `PaymentMethod` enum:
 This entity links the transaction to the method selected by the customer during checkout.
 
 ### 6. Admin
-The admin is a separate role with hard-coded credentials:
-- `admin`
-- `admin123`
+The admin is a separate role stored in the `admins` table. Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` to create the initial admin record; the password is stored as a salted PBKDF2 hash.
 
 The admin is able to view registered customer usernames and balances but is not allowed to see customer passwords. This role is separate from the shopping workflow and represents system management.
 
@@ -117,11 +116,11 @@ The admin is able to view registered customer usernames and balances but is not 
 2. Quantity must be greater than zero.
 3. The customer balance must be sufficient before checkout.
 4. A cart cannot be empty during checkout.
-5. The cart is cleared after successful checkout.
-6. Admin credentials are separate from customer login data.
+5. Open cart items are cleared after checkout by assigning them to the completed transaction; those rows remain as purchase history.
+6. Admin credentials are stored separately from customer login data.
 
 ## Practical interpretation
-Although the app uses in-memory Java collections rather than a database, the design still follows a classic relational model. In a future version, the same structure could be implemented as SQL tables such as:
+The application implements the ERD with PostgreSQL tables:
 - `customers`
 - `products`
 - `cart_items`
@@ -129,4 +128,4 @@ Although the app uses in-memory Java collections rather than a database, the des
 - `payment_methods`
 - `admins`
 
-This ERD is a useful blueprint for upgrading the app into a real database-backed system.
+`minimarketkompleks/src/main/resources/schema.sql` creates these tables and their foreign-key constraints.

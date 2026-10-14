@@ -62,16 +62,14 @@ flowchart LR
     adminLogin -. "allows" .-> viewCustomers
 ```
 
-For this in-memory demo, the admin login is `admin` / `admin123`. These are
-demo-only credentials and must not be used in a real deployment. User accounts
-and balances are not persisted when the application exits.
+Customer accounts, balances, products, open carts, and completed transactions
+are persisted in PostgreSQL. Admin accounts are stored separately, and customer
+and admin passwords are stored as salted PBKDF2 hashes.
 
 ## Entity Relationship Diagram (ERD)
 
-The application behaves like a lightweight retail system with a customer, a
-product catalog, a shopping cart, and a checkout process. Although the project
-stores data in memory instead of in a database, the data model can still be
-represented as an ERD.
+The application uses PostgreSQL tables for customer accounts, the product
+catalog, shopping carts, checkout transactions, payment methods, and admins.
 
 ```mermaid
 erDiagram
@@ -80,24 +78,25 @@ erDiagram
     PRODUCT ||--o{ CART_ITEM : included_in
     TRANSACTION ||--o{ CART_ITEM : contains
     TRANSACTION }o--|| PAYMENT_METHOD : uses
-    ADMIN ||--o| CUSTOMER : manages
+    ADMIN ||--o{ CUSTOMER : manages
 
     CUSTOMER {
         string username PK
-        string password
+        string password_hash
         decimal balance
     }
 
     PRODUCT {
-        int product_id PK
+        bigint product_id PK
         string name
         decimal price
     }
 
     CART_ITEM {
-        int cart_item_id PK
+        bigint cart_item_id PK
         string username FK
         int product_id FK
+        bigint transaction_id FK "null while cart is open"
         int quantity
         decimal line_total
     }
@@ -105,7 +104,7 @@ erDiagram
     TRANSACTION {
         int transaction_id PK
         string username FK
-        string payment_method
+        string payment_method FK
         decimal total_amount
         datetime checkout_time
     }
@@ -117,7 +116,7 @@ erDiagram
 
     ADMIN {
         string username PK
-        string password
+        string password_hash
     }
 ```
 
@@ -188,8 +187,8 @@ The transaction concept includes:
 - total amount
 - time of checkout
 
-Even though the app does not persist a database table named `Transaction`, this
-is the natural entity that captures the business event of a purchase.
+The `transactions` table records completed purchases. Checked-out cart lines
+retain their `transaction_id` as purchase history.
 
 Business rules:
 - Checkout is only allowed when the cart is not empty.
@@ -211,10 +210,9 @@ Business rules:
 - The selected method is printed on the receipt as part of the demo checkout.
 
 #### 6. Admin entity
-The admin is not a normal customer account. Instead, the app has hard-coded
-credentials:
-- username: `admin`
-- password: `admin123`
+The admin is not a normal customer account. Admin credentials are configured
+with `ADMIN_USERNAME` and `ADMIN_PASSWORD` and saved in the separate `admins`
+table as a salted password hash.
 
 The admin is allowed to view registered customer usernames and balances, but the
 application deliberately does not reveal customer passwords. This gives the ERD a
@@ -243,18 +241,27 @@ This structure matches the real purchase flow in the application:
 
 ### Why this ERD matters
 
-Even though this project stores everything in memory, the ERD helps explain the
-logic behind the code. It clarifies how the app models customer accounts,
-product inventory, cart entries, and purchases. This is useful for future
-improvements such as replacing the in-memory map with a real database, adding
-order history, introducing stock management, or expanding the admin system.
+The ERD maps to the PostgreSQL schema at
+`minimarketkompleks/src/main/resources/schema.sql`. It describes how the app
+models customer accounts, product inventory, cart entries, and purchases.
 
 ## Run from the console
 
-Install a Java Development Kit (JDK) and make sure both `java` and `javac` are
-available on your `PATH`. On Windows, run `run.bat` from the project folder or
-double-click it. The script compiles the application and starts the interactive
-console program.
+Install a Java Development Kit (JDK), Maven, and PostgreSQL. Create a PostgreSQL
+database (for example, `minimarket`), then edit the root `.env` file with your
+PostgreSQL and admin credentials:
+
+The `.env` file is excluded from Git so your password stays local.
+`DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` are required.
+`ADMIN_USERNAME` and `ADMIN_PASSWORD` must be set together; on first startup,
+they create an admin account if that username does not already exist. The app
+creates the ERD tables and payment-method rows automatically, and loads the
+sample catalog when the products table is empty. On Windows, run `run.bat` from
+the project folder. Alternatively, run:
+
+```powershell
+mvn -f minimarketkompleks/pom.xml exec:java
+```
 
 ## Import and run in Eclipse
 

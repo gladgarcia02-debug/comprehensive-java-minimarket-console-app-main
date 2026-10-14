@@ -1,7 +1,9 @@
 package com.conveniencestore;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.sql.SQLException;
 
 // Manages customer registration, login, and logout.
 public class Login {
@@ -11,13 +13,29 @@ public class Login {
     private Map<String, Customer> customers;
     private Customer currentCustomer;
     private boolean adminLoggedIn;
+    private final Database database;
 
     public Login() {
+        this(null);
+    }
+
+    public Login(Database database) {
+        this.database = database;
         customers = new HashMap<>();
     }
 
     // Logs in a customer using their username and password.
-    public boolean login(String username, String password) {
+    public boolean login(String username, String password) throws SQLException {
+        if (database != null) {
+            Customer customer = database.authenticateCustomer(username, password);
+            if (customer != null) {
+                currentCustomer = customer;
+                System.out.println("Login successful.");
+                return true;
+            }
+            System.out.println("Login failed. Please check your username and password.");
+            return false;
+        }
         if (customers.containsKey(username)) {
             Customer customer = customers.get(username);
             if (customer.checkPassword(password)) {
@@ -30,7 +48,16 @@ public class Login {
         return false;
     }
 
-    public boolean loginAdmin(String username, String password) {
+    public boolean loginAdmin(String username, String password) throws SQLException {
+        if (database != null) {
+            if (database.authenticateAdmin(username, password)) {
+                adminLoggedIn = true;
+                System.out.println("Admin login successful.");
+                return true;
+            }
+            System.out.println("Admin login failed. Please check your username and password.");
+            return false;
+        }
         if (ADMIN_USERNAME.equals(username) && ADMIN_PASSWORD.equals(password)) {
             adminLoggedIn = true;
             System.out.println("Admin login successful.");
@@ -44,21 +71,32 @@ public class Login {
         return adminLoggedIn;
     }
 
-    public void displayCustomerAccounts() {
+    public void displayCustomerAccounts() throws SQLException {
         System.out.println("Registered customers:");
-        if (customers.isEmpty()) {
+        List<Customer> registeredCustomers = database == null
+                ? new java.util.ArrayList<Customer>(customers.values())
+                : database.getCustomers();
+        if (registeredCustomers.isEmpty()) {
             System.out.println("No registered customers.");
             return;
         }
-        for (Customer customer : customers.values()) {
+        for (Customer customer : registeredCustomers) {
             System.out.println(customer.getUsername() + " - Balance: PHP " + customer.getBalance());
         }
     }
 
     // Registers a new customer account.
-    public void register(String username, String password) {
+    public void register(String username, String password) throws SQLException {
         if (ADMIN_USERNAME.equals(username)) {
             System.out.println("That username is reserved. Registration failed.");
+            return;
+        }
+        if (database != null) {
+            if (database.registerCustomer(username, password)) {
+                System.out.println("Registration successful. Please log in.");
+            } else {
+                System.out.println("That username is already taken. Registration failed.");
+            }
             return;
         }
         if (!customers.containsKey(username)) {
@@ -84,5 +122,18 @@ public class Login {
     // Returns the currently logged-in customer.
     public Customer getCurrentCustomer() {
         return currentCustomer;
+    }
+
+    public void setCurrentCustomerBalance(double balance) throws SQLException {
+        if (currentCustomer == null) {
+            throw new IllegalStateException("There is no logged-in customer.");
+        }
+        if (balance < 0) {
+            throw new IllegalArgumentException("Customer balance cannot be negative.");
+        }
+        if (database != null) {
+            database.setCustomerBalance(currentCustomer.getUsername(), balance);
+        }
+        currentCustomer.setBalance(balance);
     }
 }

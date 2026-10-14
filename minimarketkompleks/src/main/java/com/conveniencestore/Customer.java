@@ -11,12 +11,17 @@ public class Customer {
         this.balance = 0;
     }
 
+    Customer(String username, double balance) {
+        this.username = username;
+        this.balance = balance;
+    }
+
     public String getUsername() {
         return username;
     }
 
     public boolean checkPassword(String password) {
-        return this.password.equals(password);
+        return this.password != null && this.password.equals(password);
     }
 
     public double getBalance() {

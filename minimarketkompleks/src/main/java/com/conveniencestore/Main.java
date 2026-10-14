@@ -1,6 +1,7 @@
 package com.conveniencestore;
 
 import java.io.IOException;
+import java.sql.SQLException;
 import java.util.Scanner;
 
 public class Main {
@@ -17,7 +18,7 @@ public class Main {
         }
     }
 
-    private static void addProductsToCart(Store store, Customer customer, Scanner scanner) {
+    private static void addProductsToCart(Store store, Customer customer, Scanner scanner) throws SQLException {
         boolean addAnotherProduct = true;
         while (addAnotherProduct) {
             clearScreen();
@@ -47,31 +48,43 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        Store store = new Store();
-        Login login = new Login();
+        try {
+            Database database = Database.fromEnvironment();
+            database.initialize();
+            run(database);
+        } catch (SQLException | IllegalStateException e) {
+            System.err.println("Unable to start the PostgreSQL-backed application: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    private static void run(Database database) throws SQLException {
+        Store store = new Store(database);
+        Login login = new Login(database);
         Scanner scanner = new Scanner(System.in);
 
-        // Add sample products to the store.
-        store.addProduct(new Product("Bath soap bar, 90 g", 35.0));
-        store.addProduct(new Product("Shampoo sachet, 12 ml", 8.0));
-        store.addProduct(new Product("Toothpaste, 50 g", 45.0));
-        store.addProduct(new Product("Cooking oil, 1 L", 110.0));
-        store.addProduct(new Product("Powdered milk sachet, 33 g", 12.0));
-        store.addProduct(new Product("Laundry detergent sachet, 55 g", 9.0));
-        store.addProduct(new Product("Instant noodles, 55 g pack", 15.0));
-        store.addProduct(new Product("Tea bags, 25-count box", 85.0));
-        store.addProduct(new Product("White sugar, 1 kg", 75.0));
-        store.addProduct(new Product("3-in-1 coffee sachet, 20 g", 10.0));
-        store.addProduct(new Product("Facial tissues, 50 sheets", 35.0));
-        store.addProduct(new Product("Regular-milled rice, 1 kg", 50.0));
-        store.addProduct(new Product("Canned sardines, 155 g", 25.0));
-        store.addProduct(new Product("Iodized salt, 500 g", 20.0));
-        store.addProduct(new Product("Soy sauce, 350 ml", 25.0));
-        store.addProduct(new Product("Fresh milk, 1 L", 95.0));
-        store.addProduct(new Product("Ground coffee, 100 g", 120.0));
-        store.addProduct(new Product("Toothbrush, 1 piece", 30.0));
-        store.addProduct(new Product("Hairbrush, 1 piece", 75.0));
-        store.addProduct(new Product("Chicken egg, 1 piece", 9.0));
+        if (store.isProductCatalogEmpty()) {
+            store.addProduct(new Product("Bath soap bar, 90 g", 35.0));
+            store.addProduct(new Product("Shampoo sachet, 12 ml", 8.0));
+            store.addProduct(new Product("Toothpaste, 50 g", 45.0));
+            store.addProduct(new Product("Cooking oil, 1 L", 110.0));
+            store.addProduct(new Product("Powdered milk sachet, 33 g", 12.0));
+            store.addProduct(new Product("Laundry detergent sachet, 55 g", 9.0));
+            store.addProduct(new Product("Instant noodles, 55 g pack", 15.0));
+            store.addProduct(new Product("Tea bags, 25-count box", 85.0));
+            store.addProduct(new Product("White sugar, 1 kg", 75.0));
+            store.addProduct(new Product("3-in-1 coffee sachet, 20 g", 10.0));
+            store.addProduct(new Product("Facial tissues, 50 sheets", 35.0));
+            store.addProduct(new Product("Regular-milled rice, 1 kg", 50.0));
+            store.addProduct(new Product("Canned sardines, 155 g", 25.0));
+            store.addProduct(new Product("Iodized salt, 500 g", 20.0));
+            store.addProduct(new Product("Soy sauce, 350 ml", 25.0));
+            store.addProduct(new Product("Fresh milk, 1 L", 95.0));
+            store.addProduct(new Product("Ground coffee, 100 g", 120.0));
+            store.addProduct(new Product("Toothbrush, 1 piece", 30.0));
+            store.addProduct(new Product("Hairbrush, 1 piece", 75.0));
+            store.addProduct(new Product("Chicken egg, 1 piece", 9.0));
+        }
 
         while (true) {
             if (login.isAdminLoggedIn()) {
@@ -148,7 +161,7 @@ public class Main {
                 if (currentCustomer.getBalance() == 0) {
                     System.out.print("Enter your starting balance (PHP): ");
                     double startingBalance = scanner.nextDouble();
-                    currentCustomer.setBalance(startingBalance);
+                    login.setCurrentCustomerBalance(startingBalance);
                     clearScreen();
                     System.out.println("Your balance is now: PHP " + currentCustomer.getBalance());
                 }
