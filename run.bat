@@ -2,11 +2,13 @@
 setlocal
 
 set "ROOT=%~dp0"
+set "MAIN_CLASS=Main"
+if /I "%~1"=="web" set "MAIN_CLASS=WebServer"
 pushd "%ROOT%"
 
 where mvn >nul 2>nul
 if not errorlevel 1 (
-    mvn -f "%ROOT%minimarketkompleks\pom.xml" exec:java
+    mvn -f "%ROOT%minimarketkompleks\pom.xml" -Dexec.mainClass=com.conveniencestore.%MAIN_CLASS% exec:java
     set "EXIT_CODE=%errorlevel%"
     popd
     exit /b %EXIT_CODE%
@@ -49,7 +51,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-java -cp "%OUTPUT%;%DRIVER%" com.conveniencestore.Main
+java -cp "%OUTPUT%;%DRIVER%" com.conveniencestore.%MAIN_CLASS%
 set "EXIT_CODE=%errorlevel%"
 popd
 exit /b %EXIT_CODE%

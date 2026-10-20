@@ -141,6 +141,20 @@ public class Database {
         }
     }
 
+    public boolean createAdmin(String username, String password) throws SQLException {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(
+                        "INSERT INTO admins (username, password_hash) VALUES (?, ?)")) {
+            statement.setString(1, username);
+            statement.setString(2, PasswordHasher.hash(password));
+            statement.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            if ("23505".equals(e.getSQLState())) return false;
+            throw e;
+        }
+    }
+
     public void setCustomerBalance(String username, double balance) throws SQLException {
         try (Connection connection = connect();
                 PreparedStatement statement = connection.prepareStatement(
@@ -172,7 +186,7 @@ public class Database {
                         "INSERT INTO products (name, price) VALUES (?, ?) "
                                 + "ON CONFLICT (name) DO NOTHING");
                 PreparedStatement select = connection.prepareStatement(
-                        "SELECT product_id, name, price FROM products WHERE name = ?")) {
+                        "SELECT product_id, name, price, quantity FROM products WHERE name = ?")) {
             insert.setString(1, product.getName());
             insert.setBigDecimal(2, BigDecimal.valueOf(product.getPrice()));
             insert.executeUpdate();
@@ -181,29 +195,49 @@ public class Database {
             try (ResultSet results = select.executeQuery()) {
                 if (results.next()) {
                     return new Product(results.getLong("product_id"),
-                            results.getString("name"), results.getDouble("price"));
+                            results.getString("name"), results.getDouble("price"),
+                            results.getInt("quantity"));
                 }
             }
         }
         throw new SQLException("Unable to load the saved product " + product.getName() + ".");
     }
 
+    public Product createProduct(String name, BigDecimal price, int quantity) throws SQLException {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(
+                        "INSERT INTO products (name, price, quantity) VALUES (?, ?, ?) "
+                                + "RETURNING product_id, name, price, quantity")) {
+            statement.setString(1, name);
+            statement.setBigDecimal(2, price);
+            statement.setInt(3, quantity);
+            try (ResultSet results = statement.executeQuery()) {
+                if (results.next()) {
+                    return new Product(results.getLong("product_id"),
+                            results.getString("name"), results.getDouble("price"),
+                            results.getInt("quantity"));
+                }
+            }
+        }
+        throw new SQLException("Unable to create the product " + name + ".");
+    }
+
     public List<Product> getProducts() throws SQLException {
         List<Product> products = new ArrayList<>();
         try (Connection connection = connect();
                 PreparedStatement statement = connection.prepareStatement(
-                        "SELECT product_id, name, price FROM products ORDER BY product_id");
+                        "SELECT product_id, name, price, quantity FROM products ORDER BY product_id");
                 ResultSet results = statement.executeQuery()) {
             while (results.next()) {
                 products.add(new Product(results.getLong("product_id"),
-                        results.getString("name"), results.getDouble("price")));
+                        results.getString("name"), results.getDouble("price"),
+                        results.getInt("quantity")));
             }
         }
         return products;
     }
 
     public boolean addCartItem(String username, Product product, int quantity) throws SQLException {
-        BigDecimal lineTotal = BigDecimal.valueOf(product.getPrice()).multiply(BigDecimal.valueOf(quantity));
         try (Connection connection = connect()) {
             connection.setAutoCommit(false);
             try {
@@ -219,6 +253,33 @@ public class Database {
                     }
                 }
 
+                BigDecimal price;
+                int stock;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT price, quantity FROM products WHERE product_id = ? FOR UPDATE")) {
+                    statement.setLong(1, product.getProductId());
+                    try (ResultSet results = statement.executeQuery()) {
+                        if (!results.next()) throw new SQLException("Product was not found while adding a cart item.");
+                        price = results.getBigDecimal("price");
+                        stock = results.getInt("quantity");
+                    }
+                }
+                int currentQuantity;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COALESCE(SUM(quantity), 0) FROM cart_items "
+                                + "WHERE username = ? AND product_id = ? AND transaction_id IS NULL")) {
+                    statement.setString(1, username);
+                    statement.setLong(2, product.getProductId());
+                    try (ResultSet results = statement.executeQuery()) {
+                        results.next();
+                        currentQuantity = results.getInt(1);
+                    }
+                }
+                if (currentQuantity + quantity > stock) {
+                    connection.rollback();
+                    throw new SQLException("Requested quantity exceeds available stock.");
+                }
+                BigDecimal lineTotal = price.multiply(BigDecimal.valueOf(quantity));
                 BigDecimal cartTotal;
                 try (PreparedStatement statement = connection.prepareStatement(
                         "SELECT COALESCE(SUM(line_total), 0) AS cart_total FROM cart_items "
@@ -233,7 +294,6 @@ public class Database {
                     connection.rollback();
                     return false;
                 }
-
                 try (PreparedStatement statement = connection.prepareStatement(
                         "INSERT INTO cart_items (username, product_id, quantity, line_total) "
                                 + "VALUES (?, ?, ?, ?) "
@@ -261,19 +321,85 @@ public class Database {
         List<CartLine> items = new ArrayList<>();
         try (Connection connection = connect();
                 PreparedStatement statement = connection.prepareStatement(
-                        "SELECT p.name, ci.quantity, ci.line_total "
+                        "SELECT p.product_id, p.name, ci.quantity, ci.line_total "
                                 + "FROM cart_items ci JOIN products p ON p.product_id = ci.product_id "
                                 + "WHERE ci.username = ? AND ci.transaction_id IS NULL "
                                 + "ORDER BY ci.cart_item_id")) {
             statement.setString(1, username);
             try (ResultSet results = statement.executeQuery()) {
                 while (results.next()) {
-                    items.add(new CartLine(results.getString("name"),
+                    items.add(new CartLine(results.getLong("product_id"), results.getString("name"),
                             results.getInt("quantity"), results.getDouble("line_total")));
                 }
             }
         }
         return items;
+    }
+
+    public void setCartQuantity(String username, long productId, int quantity) throws SQLException {
+        try (Connection connection = connect()) {
+            connection.setAutoCommit(false);
+            try {
+                if (quantity == 0) {
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "DELETE FROM cart_items WHERE username = ? AND product_id = ? AND transaction_id IS NULL")) {
+                        statement.setString(1, username);
+                        statement.setLong(2, productId);
+                        statement.executeUpdate();
+                    }
+                    connection.commit();
+                    return;
+                }
+                BigDecimal balance;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT balance FROM customers WHERE username = ? FOR UPDATE")) {
+                    statement.setString(1, username);
+                    try (ResultSet results = statement.executeQuery()) {
+                        if (!results.next()) throw new SQLException("Customer account was not found while updating the cart.");
+                        balance = results.getBigDecimal("balance");
+                    }
+                }
+                BigDecimal price;
+                int stock;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT price, quantity FROM products WHERE product_id = ? FOR UPDATE")) {
+                    statement.setLong(1, productId);
+                    try (ResultSet results = statement.executeQuery()) {
+                        if (!results.next()) throw new SQLException("Product was not found while updating the cart.");
+                        price = results.getBigDecimal("price");
+                        stock = results.getInt("quantity");
+                    }
+                }
+                BigDecimal newLineTotal = price.multiply(BigDecimal.valueOf(quantity));
+                BigDecimal otherItems;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COALESCE(SUM(line_total), 0) FROM cart_items WHERE username = ? "
+                                + "AND transaction_id IS NULL AND product_id <> ?")) {
+                    statement.setString(1, username);
+                    statement.setLong(2, productId);
+                    try (ResultSet results = statement.executeQuery()) { results.next(); otherItems = results.getBigDecimal(1); }
+                }
+                if (BigDecimal.valueOf(quantity).compareTo(BigDecimal.valueOf(stock)) > 0) {
+                    connection.rollback();
+                    throw new SQLException("Requested quantity exceeds available stock.");
+                }
+                if (otherItems.add(newLineTotal).compareTo(balance) > 0) {
+                    connection.rollback();
+                    throw new SQLException("Updated quantity would exceed the customer's available balance.");
+                }
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "UPDATE cart_items SET quantity = ?, line_total = ? WHERE username = ? "
+                                + "AND product_id = ? AND transaction_id IS NULL")) {
+                    statement.setInt(1, quantity); statement.setBigDecimal(2, newLineTotal);
+                    statement.setString(3, username); statement.setLong(4, productId);
+                    if (statement.executeUpdate() != 1) throw new SQLException("Cart item was not found.");
+                }
+                connection.commit();
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
+            } finally { connection.setAutoCommit(true); }
+        }
     }
 
     public CheckoutResult checkout(String username, PaymentMethod paymentMethod) throws SQLException {
@@ -295,17 +421,21 @@ public class Database {
                 List<CartLine> items = new ArrayList<>();
                 BigDecimal total = BigDecimal.ZERO;
                 try (PreparedStatement statement = connection.prepareStatement(
-                        "SELECT p.name, ci.quantity, ci.line_total "
+                        "SELECT p.product_id, p.name, p.quantity AS available_quantity, ci.quantity, ci.line_total "
                                 + "FROM cart_items ci JOIN products p ON p.product_id = ci.product_id "
                                 + "WHERE ci.username = ? AND ci.transaction_id IS NULL "
-                                + "ORDER BY ci.cart_item_id FOR UPDATE OF ci")) {
+                                + "ORDER BY ci.product_id FOR UPDATE OF ci, p")) {
                     statement.setString(1, username);
                     try (ResultSet results = statement.executeQuery()) {
                         while (results.next()) {
-                            CartLine item = new CartLine(results.getString("name"),
+                            CartLine item = new CartLine(results.getLong("product_id"), results.getString("name"),
                                     results.getInt("quantity"), results.getDouble("line_total"));
                             items.add(item);
                             total = total.add(BigDecimal.valueOf(item.getLineTotal()));
+                            if (results.getInt("available_quantity") < item.getQuantity()) {
+                                connection.rollback();
+                                return CheckoutResult.outOfStock();
+                            }
                         }
                     }
                 }
@@ -317,6 +447,22 @@ public class Database {
                 if (total.compareTo(BigDecimal.valueOf(balance)) > 0) {
                     connection.rollback();
                     return CheckoutResult.insufficientBalance();
+                }
+
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "UPDATE products SET quantity = quantity - ? WHERE product_id = ? AND quantity >= ?")) {
+                    for (CartLine item : items) {
+                        statement.setInt(1, item.getQuantity());
+                        statement.setLong(2, item.getProductId());
+                        statement.setInt(3, item.getQuantity());
+                        statement.addBatch();
+                    }
+                    for (int updated : statement.executeBatch()) {
+                        if (updated != 1 && updated != java.sql.Statement.SUCCESS_NO_INFO) {
+                            connection.rollback();
+                            return CheckoutResult.outOfStock();
+                        }
+                    }
                 }
 
                 long transactionId;
@@ -358,11 +504,13 @@ public class Database {
     }
 
     public static final class CartLine {
+        private final long productId;
         private final String name;
         private final int quantity;
         private final double lineTotal;
 
-        CartLine(String name, int quantity, double lineTotal) {
+        CartLine(long productId, String name, int quantity, double lineTotal) {
+            this.productId = productId;
             this.name = name;
             this.quantity = quantity;
             this.lineTotal = lineTotal;
@@ -371,6 +519,8 @@ public class Database {
         public String getName() {
             return name;
         }
+
+        public long getProductId() { return productId; }
 
         public int getQuantity() {
             return quantity;
@@ -385,7 +535,8 @@ public class Database {
         public enum Status {
             SUCCESS,
             EMPTY_CART,
-            INSUFFICIENT_BALANCE
+            INSUFFICIENT_BALANCE,
+            OUT_OF_STOCK
         }
 
         private final Status status;
@@ -410,6 +561,10 @@ public class Database {
 
         static CheckoutResult insufficientBalance() {
             return new CheckoutResult(Status.INSUFFICIENT_BALANCE, new ArrayList<CartLine>(), 0, 0);
+        }
+
+        static CheckoutResult outOfStock() {
+            return new CheckoutResult(Status.OUT_OF_STOCK, new ArrayList<CartLine>(), 0, 0);
         }
 
         public Status getStatus() {

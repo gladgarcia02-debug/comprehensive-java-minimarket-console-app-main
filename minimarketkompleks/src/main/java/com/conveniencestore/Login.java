@@ -7,21 +7,32 @@ import java.sql.SQLException;
 
 // Manages customer registration, login, and logout.
 public class Login {
-    private static final String ADMIN_USERNAME = "admin";
-    private static final String ADMIN_PASSWORD = "admin123";
-
     private Map<String, Customer> customers;
     private Customer currentCustomer;
     private boolean adminLoggedIn;
     private final Database database;
+    private final String adminUsername;
+    private final String adminPassword;
 
     public Login() {
         this(null);
     }
 
     public Login(Database database) {
+        this(database,
+                configuredAdminUsername(),
+                EnvironmentConfig.get(EnvironmentConfig.load(), "ADMIN_PASSWORD"));
+    }
+
+    Login(Database database, String adminUsername, String adminPassword) {
         this.database = database;
+        this.adminUsername = adminUsername == null || adminUsername.trim().isEmpty() ? "admin" : adminUsername;
+        this.adminPassword = adminPassword;
         customers = new HashMap<>();
+    }
+
+    private static String configuredAdminUsername() {
+        return EnvironmentConfig.get(EnvironmentConfig.load(), "ADMIN_USERNAME");
     }
 
     // Logs in a customer using their username and password.
@@ -58,7 +69,7 @@ public class Login {
             System.out.println("Admin login failed. Please check your username and password.");
             return false;
         }
-        if (ADMIN_USERNAME.equals(username) && ADMIN_PASSWORD.equals(password)) {
+        if (adminPassword != null && adminUsername.equals(username) && adminPassword.equals(password)) {
             adminLoggedIn = true;
             System.out.println("Admin login successful.");
             return true;
@@ -87,7 +98,7 @@ public class Login {
 
     // Registers a new customer account.
     public void register(String username, String password) throws SQLException {
-        if (ADMIN_USERNAME.equals(username)) {
+        if (adminUsername.equals(username)) {
             System.out.println("That username is reserved. Registration failed.");
             return;
         }

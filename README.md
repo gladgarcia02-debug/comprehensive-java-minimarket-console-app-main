@@ -1,6 +1,7 @@
-# Convenience Store Console App
+# Convenience Store App
 
-A Java console application that simulates a simple shopping experience. Customers
+A Java console application with an optional browser UI backed by a Java HTTP API.
+Customers
 can create an account, log in, browse a sample product list, make purchases with
 their account balance, and view their shopping cart. Items are charged to the
 customer's demo balance only when they choose **Checkout**. Checkout lets the
@@ -9,8 +10,15 @@ choices do not contact a payment provider or process real payments; the demo
 balance is still deducted for each successful checkout.
 After adding an item, customers can add another product or return to the main
 menu.
-An admin can log in to view registered customer usernames and balances, but
-cannot view customer passwords.
+An admin can log in to add products to the customer catalog and view registered
+customer usernames and balances, but cannot view customer passwords. Product
+names must be unique; prices are entered in PHP and may have up to two decimal
+places. The admin also sets the initial stock quantity. Customer carts and
+checkout respect available stock, and successful orders reduce inventory.
+Existing products receive an initial stock of 100 units when the database
+schema is upgraded to include inventory tracking. Admins can register
+additional administrators from the separate admin access page after confirming
+their own password.
 
 The sample product names are shown in English. Prices are displayed in
 Philippine pesos (PHP) and are illustrative estimates for common Philippine
@@ -262,6 +270,20 @@ the project folder. Alternatively, run:
 ```powershell
 mvn -f minimarketkompleks/pom.xml exec:java
 ```
+
+## Run with the browser UI
+
+Use the same PostgreSQL configuration above. On Windows, run `run-web.bat` from
+the repository folder, then open <http://127.0.0.1:8765>. The Java server serves
+the UI and its API from the same origin. The API supports registration, sign-in,
+demo balance setup, browsing products, persistent cart updates, checkout, and
+admin customer account viewing. Customers can browse and build a guest cart
+before signing in; that cart is saved in the browser and merged into the account
+cart after sign-in. Registration signs the new customer in automatically.
+Payment is selected from the cart and still requires a final order confirmation.
+Set `PORT` in the environment to use a different local port. Payment method
+selection is recorded for the demo checkout; no real payment provider is
+contacted.
 
 ## Import and run in Eclipse
 

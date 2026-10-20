@@ -52,7 +52,8 @@ public class Store {
         System.out.println("Products available:");
         for (int i = 0; i < products.size(); i++) {
             Product product = products.get(i);
-            System.out.println((i + 1) + ". " + product.getName() + " (Price: PHP " + product.getPrice() + ")");
+            System.out.println((i + 1) + ". " + product.getName() + " (Price: PHP " + product.getPrice()
+                    + ", In stock: " + product.getQuantity() + ")");
         }
     }
 
@@ -67,6 +68,15 @@ public class Store {
         }
 
         Product product = products.get(productNumber - 1);
+        if (database == null) {
+            Map<Product, Integer> customerCart = shoppingCart.get(customer);
+            int alreadyInCart = customerCart == null ? 0 : customerCart.getOrDefault(product, 0);
+            if (alreadyInCart + quantity > product.getQuantity()) {
+                System.out.println("Not enough stock. Only " + Math.max(0, product.getQuantity() - alreadyInCart)
+                        + " more available.");
+                return false;
+            }
+        }
         double cartTotal = getCartTotal(customer);
         double itemTotal = product.getPrice() * quantity;
         if (cartTotal + itemTotal > customer.getBalance()) {
@@ -74,9 +84,17 @@ public class Store {
             return false;
         } else {
             if (database != null) {
-                if (!database.addCartItem(customer.getUsername(), product, quantity)) {
-                    System.out.println("Insufficient balance. Item was not added.");
-                    return false;
+                try {
+                    if (!database.addCartItem(customer.getUsername(), product, quantity)) {
+                        System.out.println("Insufficient balance. Item was not added.");
+                        return false;
+                    }
+                } catch (SQLException e) {
+                    if (e.getMessage() != null && e.getMessage().contains("available stock")) {
+                        System.out.println("Not enough stock. Item was not added.");
+                        return false;
+                    }
+                    throw e;
                 }
                 System.out.println("Item added to cart.");
                 return true;
@@ -136,6 +154,10 @@ public class Store {
                 System.out.println("Insufficient balance. Checkout failed.");
                 return false;
             }
+            if (result.getStatus() == Database.CheckoutResult.Status.OUT_OF_STOCK) {
+                System.out.println("One or more cart items are out of stock. Checkout failed.");
+                return false;
+            }
 
             System.out.println("\nDemo receipt for " + customer.getUsername() + ":");
             System.out.println("Selected payment method: " + paymentMethod.getDisplayName());
@@ -162,6 +184,12 @@ public class Store {
             System.out.println("Insufficient balance. Checkout failed.");
             return false;
         }
+        for (Map.Entry<Product, Integer> item : customerCart.entrySet()) {
+            if (item.getValue() > item.getKey().getQuantity()) {
+                System.out.println("One or more cart items are out of stock. Checkout failed.");
+                return false;
+            }
+        }
 
         System.out.println("\nDemo receipt for " + customer.getUsername() + ":");
         System.out.println("Selected payment method: " + paymentMethod.getDisplayName());
@@ -169,6 +197,7 @@ public class Store {
         for (Map.Entry<Product, Integer> item : customerCart.entrySet()) {
             double itemTotal = item.getKey().getPrice() * item.getValue();
             System.out.println(item.getKey().getName() + " x " + item.getValue() + " = PHP " + itemTotal);
+            item.getKey().setQuantity(item.getKey().getQuantity() - item.getValue());
         }
         customer.setBalance(customer.getBalance() - total);
         System.out.println("Total charged to demo balance: PHP " + total);
