@@ -34,9 +34,10 @@ only when the products table is empty.
   customer cart after sign-in when available.
 - Checkout requires a customer account. Choose Cash on Delivery, GCash, or Card
   in the cart, then review and confirm the order.
-- Payment methods are for the demo only: no payment provider is contacted, and
-  a successful order is charged to the customer's demo balance. Purchased
-  quantities are deducted from stock.
+- Payment methods are for the demo only: no payment provider is contacted.
+  GCash and Card orders are charged to the customer's demo balance; Cash on
+  Delivery leaves the balance unchanged. Purchased quantities are deducted
+  from stock.
 
 ## Administrator workflow
 

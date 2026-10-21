@@ -178,7 +178,7 @@ public final class WebServer {
                 Product selected = null;
                 for (Product p : database.getProducts()) if (p.getProductId() == productId) selected = p;
                 if (selected == null) throw new ApiError(404, "Product not found.");
-                if (!database.addCartItem(session.username, selected, quantity)) throw new ApiError(409, "This item would exceed your available balance.");
+                if (!database.addCartItem(session.username, selected, quantity)) throw new ApiError(409, "This item could not be added to your cart.");
                 json(exchange, 200, cart(session.username)); return;
             }
             if ("POST".equals(method) && "/api/cart/quantity".equals(path)) {
@@ -213,9 +213,7 @@ public final class WebServer {
         } catch (NumberFormatException e) {
             json(exchange, 400, message("A numeric value is invalid."));
         } catch (SQLException e) {
-            if (e.getMessage() != null && e.getMessage().contains("available balance")) {
-                json(exchange, 409, message("That quantity would exceed your available balance."));
-            } else if (e.getMessage() != null && e.getMessage().contains("available stock")) {
+            if (e.getMessage() != null && e.getMessage().contains("available stock")) {
                 json(exchange, 409, message("That quantity exceeds the available product stock."));
             } else {
                 e.printStackTrace(); json(exchange, 500, message("The database request failed."));

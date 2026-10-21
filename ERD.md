@@ -80,7 +80,7 @@ This logically creates a bridge entity, `CartItem`, with the following aspects:
 This is important because one customer can buy multiple products, and one product can appear in many customer carts.
 
 ### 4. Transaction
-A transaction happens when the customer checks out. The app calculates the total cart value and subtracts it from the customer's balance. This is the business event that converts a cart into a completed purchase.
+A transaction happens when the customer checks out. GCash and Card subtract the total from the customer's demo balance. Cash on Delivery records the order without changing that balance.
 
 Conceptually, a transaction includes:
 - `username` of the buyer
@@ -114,7 +114,7 @@ The admin is able to view registered customer usernames and balances but is not 
 ## Business rules implied by the system
 1. A username must be unique.
 2. Quantity must be greater than zero.
-3. The customer balance must be sufficient before checkout.
+3. The customer balance must be sufficient for GCash or Card checkout. Cash on Delivery does not use the demo balance.
 4. A cart cannot be empty during checkout.
 5. Open cart items are cleared after checkout by assigning them to the completed transaction; those rows remain as purchase history.
 6. Admin credentials are stored separately from customer login data.

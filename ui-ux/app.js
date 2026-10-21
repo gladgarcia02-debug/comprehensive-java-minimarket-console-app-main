@@ -100,7 +100,10 @@ function renderCart() {
   const count = cart.reduce((sum, line) => sum + Number(line.quantity), 0);
   $('#nav-count').textContent = count;   $('#item-count').textContent = count;
   $('#cart-total').textContent = peso(total());
-  $('#remaining').textContent = account?.role === 'customer' ? peso((account.balance || 0) - total()) : 'Sign in to view balance';
+  const payment = $('input[name="cart-payment"]:checked')?.value;
+  $('#remaining').textContent = account?.role === 'customer'
+    ? payment === 'CASH_ON_DELIVERY' ? peso(account.balance || 0) : peso((account.balance || 0) - total())
+    : 'Sign in to view balance';
   $('#modal-total').textContent = peso(total());
   $('#checkout').textContent = account?.role === 'customer' ? 'Review order' : 'Sign in to check out';
   $('#cart-signin-note').hidden = account?.role === 'customer';
@@ -154,7 +157,7 @@ async function mergeGuestCart() {
 async function loadCart() {
   let mergeResult = { merged: 0, remaining: guestCart.length, errorMessage: '' };
   if (account?.role === 'customer') {
-    if (guestCart.length && Number(account.balance) > 0) mergeResult = await mergeGuestCart();
+    if (guestCart.length) mergeResult = await mergeGuestCart();
     cart = await api('/cart');
     cart = cart.concat(guestCartLines());
   } else {
@@ -356,7 +359,7 @@ $('#checkout').onclick = async () => {
   try {
     const mergeResult = await loadCart();
     if (mergeResult.remaining) {
-      toast('Set a sufficient demo balance and review your saved guest items before checkout.');
+      toast('Review your saved guest items before checkout.');
       return;
     }
     if (!total()) { toast('Your cart is empty.'); return; }
@@ -382,14 +385,24 @@ $('#confirm-checkout').onclick = async () => {
     cart = [];
     $('#checkout-modal').classList.remove('open');
     renderCart();
+    category = 'All';
+    query = '';
+    $('#search').value = '';
+    document.querySelectorAll('.chip').forEach(chip => chip.classList.toggle('selected', chip.dataset.category === 'All'));
+    renderProducts();
     showView('shop');
-    toast(`Demo order complete · ${peso(receipt.total)} charged to balance.`);
+    toast(receipt.paymentMethod === 'Cash on Delivery'
+      ? `Order complete · ${peso(receipt.total)} due on delivery.`
+      : `Demo order complete · ${peso(receipt.total)} charged to balance.`);
     loadProducts().catch(error => toast(`Order complete, but product stock could not refresh: ${error.message}`));
   } catch (error) {
     $('#checkout-error').textContent = error.message;
     $('#checkout-error').hidden = false;
   } finally { button.disabled = false; }
 };
+$('#cart-view').addEventListener('change', event => {
+  if (event.target.matches('input[name="cart-payment"]')) renderCart();
+});
 (async function init() {
   try {
     try { guestCart = readGuestCart(); }

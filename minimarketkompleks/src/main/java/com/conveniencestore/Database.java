@@ -241,18 +241,6 @@ public class Database {
         try (Connection connection = connect()) {
             connection.setAutoCommit(false);
             try {
-                BigDecimal balance;
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "SELECT balance FROM customers WHERE username = ? FOR UPDATE")) {
-                    statement.setString(1, username);
-                    try (ResultSet results = statement.executeQuery()) {
-                        if (!results.next()) {
-                            throw new SQLException("Customer account was not found while adding a cart item.");
-                        }
-                        balance = results.getBigDecimal("balance");
-                    }
-                }
-
                 BigDecimal price;
                 int stock;
                 try (PreparedStatement statement = connection.prepareStatement(
@@ -280,20 +268,6 @@ public class Database {
                     throw new SQLException("Requested quantity exceeds available stock.");
                 }
                 BigDecimal lineTotal = price.multiply(BigDecimal.valueOf(quantity));
-                BigDecimal cartTotal;
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "SELECT COALESCE(SUM(line_total), 0) AS cart_total FROM cart_items "
-                                + "WHERE username = ? AND transaction_id IS NULL")) {
-                    statement.setString(1, username);
-                    try (ResultSet results = statement.executeQuery()) {
-                        results.next();
-                        cartTotal = results.getBigDecimal("cart_total");
-                    }
-                }
-                if (cartTotal.add(lineTotal).compareTo(balance) > 0) {
-                    connection.rollback();
-                    return false;
-                }
                 try (PreparedStatement statement = connection.prepareStatement(
                         "INSERT INTO cart_items (username, product_id, quantity, line_total) "
                                 + "VALUES (?, ?, ?, ?) "
@@ -350,15 +324,6 @@ public class Database {
                     connection.commit();
                     return;
                 }
-                BigDecimal balance;
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "SELECT balance FROM customers WHERE username = ? FOR UPDATE")) {
-                    statement.setString(1, username);
-                    try (ResultSet results = statement.executeQuery()) {
-                        if (!results.next()) throw new SQLException("Customer account was not found while updating the cart.");
-                        balance = results.getBigDecimal("balance");
-                    }
-                }
                 BigDecimal price;
                 int stock;
                 try (PreparedStatement statement = connection.prepareStatement(
@@ -371,21 +336,9 @@ public class Database {
                     }
                 }
                 BigDecimal newLineTotal = price.multiply(BigDecimal.valueOf(quantity));
-                BigDecimal otherItems;
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "SELECT COALESCE(SUM(line_total), 0) FROM cart_items WHERE username = ? "
-                                + "AND transaction_id IS NULL AND product_id <> ?")) {
-                    statement.setString(1, username);
-                    statement.setLong(2, productId);
-                    try (ResultSet results = statement.executeQuery()) { results.next(); otherItems = results.getBigDecimal(1); }
-                }
                 if (BigDecimal.valueOf(quantity).compareTo(BigDecimal.valueOf(stock)) > 0) {
                     connection.rollback();
                     throw new SQLException("Requested quantity exceeds available stock.");
-                }
-                if (otherItems.add(newLineTotal).compareTo(balance) > 0) {
-                    connection.rollback();
-                    throw new SQLException("Updated quantity would exceed the customer's available balance.");
                 }
                 try (PreparedStatement statement = connection.prepareStatement(
                         "UPDATE cart_items SET quantity = ?, line_total = ? WHERE username = ? "
@@ -444,7 +397,8 @@ public class Database {
                     connection.rollback();
                     return CheckoutResult.emptyCart();
                 }
-                if (total.compareTo(BigDecimal.valueOf(balance)) > 0) {
+                boolean walletPayment = paymentMethod != PaymentMethod.CASH_ON_DELIVERY;
+                if (walletPayment && total.compareTo(BigDecimal.valueOf(balance)) > 0) {
                     connection.rollback();
                     return CheckoutResult.insufficientBalance();
                 }
@@ -484,12 +438,15 @@ public class Database {
                     statement.setString(2, username);
                     statement.executeUpdate();
                 }
-                BigDecimal remaining = BigDecimal.valueOf(balance).subtract(total);
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "UPDATE customers SET balance = ? WHERE username = ?")) {
-                    statement.setBigDecimal(1, remaining);
-                    statement.setString(2, username);
-                    statement.executeUpdate();
+                BigDecimal remaining = BigDecimal.valueOf(balance);
+                if (walletPayment) {
+                    remaining = remaining.subtract(total);
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "UPDATE customers SET balance = ? WHERE username = ?")) {
+                        statement.setBigDecimal(1, remaining);
+                        statement.setString(2, username);
+                        statement.executeUpdate();
+                    }
                 }
 
                 connection.commit();

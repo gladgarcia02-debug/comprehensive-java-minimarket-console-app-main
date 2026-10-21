@@ -77,28 +77,22 @@ public class Store {
                 return false;
             }
         }
-        double cartTotal = getCartTotal(customer);
-        double itemTotal = product.getPrice() * quantity;
-        if (cartTotal + itemTotal > customer.getBalance()) {
-            System.out.println("Insufficient balance. Item was not added.");
-            return false;
-        } else {
-            if (database != null) {
-                try {
-                    if (!database.addCartItem(customer.getUsername(), product, quantity)) {
-                        System.out.println("Insufficient balance. Item was not added.");
-                        return false;
-                    }
-                } catch (SQLException e) {
-                    if (e.getMessage() != null && e.getMessage().contains("available stock")) {
-                        System.out.println("Not enough stock. Item was not added.");
-                        return false;
-                    }
-                    throw e;
+        if (database != null) {
+            try {
+                if (!database.addCartItem(customer.getUsername(), product, quantity)) {
+                    System.out.println("Item was not added.");
+                    return false;
                 }
-                System.out.println("Item added to cart.");
-                return true;
+            } catch (SQLException e) {
+                if (e.getMessage() != null && e.getMessage().contains("available stock")) {
+                    System.out.println("Not enough stock. Item was not added.");
+                    return false;
+                }
+                throw e;
             }
+            System.out.println("Item added to cart.");
+            return true;
+        }
             Map<Product, Integer> customerCart = shoppingCart.get(customer);
             if (customerCart == null) {
                 customerCart = new HashMap<>();
@@ -106,8 +100,7 @@ public class Store {
             }
             customerCart.put(product, customerCart.getOrDefault(product, 0) + quantity);
             System.out.println("Item added to cart.");
-            return true;
-        }
+        return true;
     }
 
     public void displayShoppingCart(Customer customer) throws SQLException {
@@ -167,7 +160,11 @@ public class Store {
                         + " = PHP " + item.getLineTotal());
             }
             customer.setBalance(result.getRemainingBalance());
-            System.out.println("Total charged to demo balance: PHP " + result.getTotal());
+            if (paymentMethod == PaymentMethod.CASH_ON_DELIVERY) {
+                System.out.println("Pay on delivery. Demo balance was not charged.");
+            } else {
+                System.out.println("Total charged to demo balance: PHP " + result.getTotal());
+            }
             System.out.println("Remaining demo balance: PHP " + customer.getBalance());
             System.out.println("Checkout complete. Thank you for shopping!");
             return true;
@@ -180,7 +177,7 @@ public class Store {
         }
 
         double total = getCartTotal(customer);
-        if (total > customer.getBalance()) {
+        if (paymentMethod != PaymentMethod.CASH_ON_DELIVERY && total > customer.getBalance()) {
             System.out.println("Insufficient balance. Checkout failed.");
             return false;
         }
@@ -199,8 +196,12 @@ public class Store {
             System.out.println(item.getKey().getName() + " x " + item.getValue() + " = PHP " + itemTotal);
             item.getKey().setQuantity(item.getKey().getQuantity() - item.getValue());
         }
-        customer.setBalance(customer.getBalance() - total);
-        System.out.println("Total charged to demo balance: PHP " + total);
+        if (paymentMethod != PaymentMethod.CASH_ON_DELIVERY) {
+            customer.setBalance(customer.getBalance() - total);
+            System.out.println("Total charged to demo balance: PHP " + total);
+        } else {
+            System.out.println("Pay on delivery. Demo balance was not charged.");
+        }
         System.out.println("Remaining demo balance: PHP " + customer.getBalance());
         shoppingCart.remove(customer);
         System.out.println("Checkout complete. Thank you for shopping!");
