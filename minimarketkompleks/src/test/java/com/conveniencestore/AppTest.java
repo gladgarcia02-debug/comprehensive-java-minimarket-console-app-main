@@ -48,6 +48,46 @@ public class AppTest {
     }
 
     @Test
+    public void productsKeepTheirStartingStockQuantity() {
+        Product product = new Product("Apples", 12.5, 24);
+
+        assertEquals(24, product.getQuantity());
+    }
+
+    @Test
+    public void inMemoryStoreEnforcesAndDeductsStock() throws Exception {
+        Store store = new Store();
+        Customer customer = new Customer("shopper", "password");
+        customer.setBalance(100);
+        Product product = new Product("Apples", 12, 2);
+        store.addProduct(product);
+
+        assertTrue(store.addToCart(customer, 1, 2));
+        assertFalse(store.addToCart(customer, 1, 1));
+        assertTrue(store.checkout(customer, PaymentMethod.CASH_ON_DELIVERY));
+
+        assertEquals(0, product.getQuantity());
+        assertEquals(76, customer.getBalance(), 0.001);
+        assertFalse(store.addToCart(customer, 1, 1));
+    }
+
+    @Test
+    public void checkoutLeavesCartAndBalanceWhenStockChangesAfterAdding() throws Exception {
+        Store store = new Store();
+        Customer customer = new Customer("shopper", "password");
+        customer.setBalance(100);
+        Product product = new Product("Apples", 12, 2);
+        store.addProduct(product);
+        assertTrue(store.addToCart(customer, 1, 2));
+        product.setQuantity(1);
+
+        assertFalse(store.checkout(customer, PaymentMethod.GCASH));
+        assertEquals(100, customer.getBalance(), 0.001);
+        assertEquals(1, product.getQuantity());
+        assertFalse(store.checkout(customer, PaymentMethod.GCASH));
+    }
+
+    @Test
     public void checkoutChargesBalanceAndClearsCart() throws Exception {
         Store store = new Store();
         Customer customer = new Customer("test", "password");
@@ -90,7 +130,7 @@ public class AppTest {
 
     @Test
     public void adminCanViewCustomerNamesAndBalancesButNotPasswords() throws Exception {
-        Login login = new Login();
+        Login login = new Login(null, "test-admin", "test-admin-password");
         login.register("customer1", "secret-password");
         assertTrue(login.login("customer1", "secret-password"));
         login.getCurrentCustomer().setBalance(75);
@@ -100,8 +140,8 @@ public class AppTest {
         PrintStream originalOutput = System.out;
         try {
             System.setOut(new PrintStream(output));
-            assertFalse(login.loginAdmin("admin", "wrong-password"));
-            assertTrue(login.loginAdmin("admin", "admin123"));
+            assertFalse(login.loginAdmin("test-admin", "wrong-password"));
+            assertTrue(login.loginAdmin("test-admin", "test-admin-password"));
             login.displayCustomerAccounts();
         } finally {
             System.setOut(originalOutput);
@@ -115,10 +155,10 @@ public class AppTest {
 
     @Test
     public void adminUsernameCannotBeRegisteredAsCustomer() throws Exception {
-        Login login = new Login();
-        login.register("admin", "customer-password");
+        Login login = new Login(null, "test-admin", "test-admin-password");
+        login.register("test-admin", "customer-password");
 
-        assertFalse(login.login("admin", "customer-password"));
-        assertTrue(login.loginAdmin("admin", "admin123"));
+        assertFalse(login.login("test-admin", "customer-password"));
+        assertTrue(login.loginAdmin("test-admin", "test-admin-password"));
     }
 }

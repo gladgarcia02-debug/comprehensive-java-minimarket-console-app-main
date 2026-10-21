@@ -12,8 +12,11 @@ CREATE TABLE IF NOT EXISTS admins (
 CREATE TABLE IF NOT EXISTS products (
     product_id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    price NUMERIC(12, 2) NOT NULL CHECK (price >= 0)
+    price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+    quantity INTEGER NOT NULL DEFAULT 100 CHECK (quantity >= 0)
 );
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 100 CHECK (quantity >= 0);
 
 CREATE TABLE IF NOT EXISTS payment_methods (
     payment_method VARCHAR(40) PRIMARY KEY,
